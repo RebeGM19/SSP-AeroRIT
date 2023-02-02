@@ -152,12 +152,14 @@ if __name__ == "__main__":
     ### Pretrained representation present?
     parser.add_argument('--pretrained_weights', default = None, help = 'Path to pretrained weights for network')
     
+    parser.add_argument('--n_execution', default = 0, type = int)
+    
     parser.add_argument('--parallel', action='store_true')
     
     
     args = parse_args(parser)
     print(args)
-    filename = "ALTER " + args.network_arch + " bs=" + str(args.batch_size) + " ngf=" + str(args.ngf) + ".txt"
+    filename = "ALTER " + args.n_execution + " " + args.network_arch + " bs=" + str(args.batch_size) + " ngf=" + str(args.ngf) + ".txt"
     f = open(filename, "a")
     #unet
     #if args.use_cuda and torch.cuda.is_available():
@@ -238,7 +240,7 @@ if __name__ == "__main__":
         load_weights(net, args.pretrained_weights)
         print('Completed loading pretrained network weights')
         
-    print("PARAMETROS", count_parameters(net))
+    print("PARAMETERS", count_parameters(net))
     net.to(device)
     
     optimizer = optim.Adam(net.parameters(), lr = args.learning_rate)
@@ -252,8 +254,9 @@ if __name__ == "__main__":
     
     bestmiou = 0
 
-    
-        
+    avgoa = 0
+    avgmpca = 0
+    avgmiou = 0
     for epoch in range(args.epochs):
         #scheduler.step()
         train(epoch)
@@ -271,4 +274,11 @@ if __name__ == "__main__":
             #}
             #torch.save(checkpoint, args.network_weights_path')
         scheduler.step()
+        avgoa = avgoa + oa
+        avgmpca = avgmpca + pca
+        avgmiou = avgmiou + mIOU
+    print('Best mIOU = {:.3f}\n'.format(bestmiou))
+    f.write('Best mIOU = {:.3f}\n'.format(bestmiou))
+    print('Average: Overall acc = {:.3f}, MPCA = {:.3f}, mIOU = {:.3f}\n'.format(avgoa/args.epochs, avgmpca/args.epochs, avgmiou/args.epochs))
+    f.write('Average: Overall acc = {:.3f}, MPCA = {:.3f}, mIOU = {:.3f}\n'.format(avgoa/args.epochs, avgmpca/args.epochs, avgmiou/args.epochs))
     f.close()
