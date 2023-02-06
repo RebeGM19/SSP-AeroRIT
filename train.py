@@ -159,7 +159,7 @@ if __name__ == "__main__":
     
     args = parse_args(parser)
     print(args)
-    filename = "ALTER " + args.n_execution + " " + args.network_arch + " bs=" + str(args.batch_size) + " ngf=" + str(args.ngf) + ".txt"
+    filename = "ALTER " + str(args.n_execution) + " " + args.network_arch + " bs=" + str(args.batch_size) + " ngf=" + str(args.ngf) + ".txt"
     f = open(filename, "a")
     #unet
     #if args.use_cuda and torch.cuda.is_available():
@@ -257,6 +257,7 @@ if __name__ == "__main__":
     avgoa = 0
     avgmpca = 0
     avgmiou = 0
+    avgdice = 0
     for epoch in range(args.epochs):
         #scheduler.step()
         train(epoch)
@@ -275,10 +276,11 @@ if __name__ == "__main__":
             #torch.save(checkpoint, args.network_weights_path')
         scheduler.step()
         avgoa = avgoa + oa
-        avgmpca = avgmpca + pca
+        avgmpca = avgmpca + mpca
         avgmiou = avgmiou + mIOU
+        avgdice = avgdice + dice
     print('Best mIOU = {:.3f}\n'.format(bestmiou))
     f.write('Best mIOU = {:.3f}\n'.format(bestmiou))
-    print('Average: Overall acc = {:.3f}, MPCA = {:.3f}, mIOU = {:.3f}\n'.format(avgoa/args.epochs, avgmpca/args.epochs, avgmiou/args.epochs))
-    f.write('Average: Overall acc = {:.3f}, MPCA = {:.3f}, mIOU = {:.3f}\n'.format(avgoa/args.epochs, avgmpca/args.epochs, avgmiou/args.epochs))
+    print('Average: Overall acc = {:.3f}, MPCA = {:.3f}, mIOU = {:.3f}, dice = {:.3f}\n'.format(avgoa/args.epochs, avgmpca/args.epochs, avgmiou/args.epochs, avgdice/args.epochs))
+    f.write('Average: Overall acc = {:.3f}, MPCA = {:.3f}, mIOU = {:.3f}, dice = {:.3f}\n'.format(avgoa/args.epochs, avgmpca/args.epochs, avgmiou/args.epochs, avgdice/args.epochs))
     f.close()
