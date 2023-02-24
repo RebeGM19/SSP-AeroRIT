@@ -23,10 +23,8 @@ from helpers.lossfunctions import cross_entropy2d
 from torchvision import transforms
 
 from networks.resnet6 import ResnetGenerator
+from networks.resnet6tridSSP import ResnetGenerator3DSSP
 from networks.resnet6trid import ResnetGenerator3D
-from networks.resnet6tridpre import ResnetGenerator3DPre
-from networks.segnet import segnet, segnetm
-from networks.unet import unet, unetm
 from networks.model_utils import init_weights, load_weights
 
 import argparse
@@ -45,8 +43,6 @@ def train(epoch = 0):
     running_loss = 0.0
     
     for idx, (rgb_ip, hsi_ip, labels) in enumerate(trainloader, 0):
-#        print(idx)
-        #print(hsi_ip.shape)
         N = hsi_ip.size(0)
         optimizer.zero_grad()
         
@@ -54,8 +50,6 @@ def train(epoch = 0):
         
         loss = criterion(outputs, labels.to(device))
         loss.backward()
-        #with amp.scale_loss(loss, optimizer) as scaled_loss:
-            #scaled_loss.backward()
         optimizer.step()
         
         running_loss += loss.item()
@@ -89,20 +83,15 @@ def val(epoch = 0):
             loss = criterion(outputs, labels.to(device))
             
             valloss_fx += loss.item()
-            #print(idx, valloss_fx)
-            #if idx == xxx:
-                #print(np.unique(labels))  # Si es nan, todas las labels del patch deberían ser 5 (o casi todas)
-            
+
             valloss2.update(loss.item(), N)
             
             truth = np.append(truth, labels.cpu().numpy())
             pred = np.append(pred, outputs.max(1)[1].cpu().numpy())
             
-            #print("{0:.2f}".format((idx+1)/(len(valset)/100)*100), end = '-', flush = True)
             print("{0:.2f}".format((idx+1)*100/(len(valloader))), end = '-', flush = True)
     
     print('VAL: %d loss: %.3f' % (epoch + 1, valloss_fx / (idx+1)))
-    f.write('VAL: %d loss: %.3f' % (epoch + 1, valloss_fx / (idx+1)))
     valloss.append(valloss2.avg)
     
     return perf(truth, pred)
@@ -124,7 +113,7 @@ if __name__ == "__main__":
     
     ### 2. Network selections
     ### a. Which network?
-    parser.add_argument('--network_arch', default = 'unet', help = 'Network architecture?')
+    parser.add_argument('--network_arch', default = 'resnet', help = 'Network architecture?')
     parser.add_argument('--use_mini', action = 'store_true', help = 'Use mini version of network?')
     
     ### b. ResNet config
@@ -144,7 +133,7 @@ if __name__ == "__main__":
     parser.add_argument('--batch-size', default = 100, type = int, help = 'Number of images sampled per minibatch?')
     parser.add_argument('--init_weights', default = 'kaiming', help = "Choose from: 'normal', 'xavier', 'kaiming'")
     parser.add_argument('--learning-rate', default = 1e-4, type = int, help = 'Initial learning rate for training the network?')
-    #parser.add_argument('--learning-rate', default = 2e-4, type = int, help = 'Initial learning rate for training the network?')
+    
     parser.add_argument('--epochs', default = 60, type = int, help = 'Maximum number of epochs?')
     
     parser.add_argument('--ngf', default = 64, type = int, help = 'Number of filters')
@@ -159,19 +148,11 @@ if __name__ == "__main__":
     
     args = parse_args(parser)
     print(args)
-    filename = "ALTER " + str(args.n_execution) + " " + args.network_arch + " bs=" + str(args.batch_size) + " ngf=" + str(args.ngf) + ".txt"
-    f = open(filename, "a")
-    #unet
-    #if args.use_cuda and torch.cuda.is_available():
-        #device = 'cuda'
-    #else:
-        #device = 'cpu'
-        
+
     device = 'cuda'
     if args.use_cpu: device = 'cpu'
     
     perf = Metrics()
-    
     
     # Data augmentations:
     
@@ -201,8 +182,6 @@ if __name__ == "__main__":
         
     trainset = AeroCLoader(set_loc = 'left', set_type = 'train', size = 'small', \
                            hsi_sign=args.hsi_c, hsi_mode = hsi_mode,transforms = tx, augs = augs_tx, use3d = True)
-    #valset = AeroCLoader(set_loc = 'mid', set_type = 'test', size = 'small', \
-                         #hsi_sign=args.hsi_c, hsi_mode = hsi_mode, transforms = tx, use3d = True)
     valset = AeroCLoader(set_loc = 'right', set_type = 'test', size = 'small', hsi_sign = args.hsi_c, hsi_mode = 'all', transforms = tx, use3d = True)
 
     trainloader = torch.utils.data.DataLoader(trainset, batch_size = args.batch_size, shuffle = True)
@@ -217,19 +196,9 @@ if __name__ == "__main__":
     if args.network_arch == 'resnet':
         net = ResnetGenerator(args.bands, 6, n_blocks=args.resnet_blocks)
     elif args.network_arch == 'SSP':
-        net = ResnetGenerator3D(args.bands, 6, args.ngf, n_blocks=args.resnet_blocks)
+        net = ResnetGenerator3DSSP(args.bands, 6, args.ngf, n_blocks=args.resnet_blocks)
     elif args.network_arch == 'NoSSP':
-        net = ResnetGenerator3DPre(args.bands, 6, args.ngf, n_blocks=args.resnet_blocks)
-    elif args.network_arch == 'segnet':
-        if args.mini == True:
-            net = segnetm(args.bands, 6)
-        else:
-            net = segnet(args.bands, 6)
-    elif args.network_arch == 'unet':
-        if args.use_mini == True:
-            net = unetm(args.bands, 6, use_SE = args.use_SE, use_PReLU = args.use_preluSE)
-        else:
-            net = unet(args.bands, 6)
+        net = ResnetGenerator3D(args.bands, 6, args.ngf, n_blocks=args.resnet_blocks)
     else:
         raise NotImplementedError('required parameter not found in dictionary')
     if args.parallel:
@@ -245,21 +214,13 @@ if __name__ == "__main__":
     
     optimizer = optim.Adam(net.parameters(), lr = args.learning_rate)
 
-    #net, optimizer = amp.initialize(net, optimizer, opt_level='O1')
 
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[40,50])
 
     trainloss = []
     valloss = []
     
-    bestmiou = 0
-
-    avgoa = 0
-    avgmpca = 0
-    avgmiou = 0
-    avgdice = 0
     for epoch in range(args.epochs):
-        #scheduler.step()
         train(epoch)
         oa, mpca, mIOU, dice, IOU = val(epoch)
         print('Overall acc  = {:.3f}, MPCA = {:.3f}, mIOU = {:.3f}'.format(oa, mpca, mIOU))
@@ -267,20 +228,4 @@ if __name__ == "__main__":
         if mIOU > bestmiou:
             bestmiou = mIOU
             torch.save(net.state_dict(), args.network_weights_path)
-            # Save checkpoint
-            #checkpoint = {
-                #'model': net.state_dict(),
-                #'optimizer': net.state_dict(),
-                #'amp': amp.state_dict()
-            #}
-            #torch.save(checkpoint, args.network_weights_path')
         scheduler.step()
-        avgoa = avgoa + oa
-        avgmpca = avgmpca + mpca
-        avgmiou = avgmiou + mIOU
-        avgdice = avgdice + dice
-    print('Best mIOU = {:.3f}\n'.format(bestmiou))
-    f.write('Best mIOU = {:.3f}\n'.format(bestmiou))
-    print('Average: Overall acc = {:.3f}, MPCA = {:.3f}, mIOU = {:.3f}, dice = {:.3f}\n'.format(avgoa/args.epochs, avgmpca/args.epochs, avgmiou/args.epochs, avgdice/args.epochs))
-    f.write('Average: Overall acc = {:.3f}, MPCA = {:.3f}, mIOU = {:.3f}, dice = {:.3f}\n'.format(avgoa/args.epochs, avgmpca/args.epochs, avgmiou/args.epochs, avgdice/args.epochs))
-    f.close()

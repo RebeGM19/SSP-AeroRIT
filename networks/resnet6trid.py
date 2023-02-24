@@ -9,35 +9,6 @@ Created on Tue Jul 16 06:00:09 2019
 import torch
 import torch.nn as nn
 
-
-
-class stride_supression(nn.Module):
-    def __init__(self, stride, dimension=1):
-        super(stride_supression, self).__init__()
-        self.d = dimension
-        self.stride = stride
-    
-    def create_subcubes(self, stride, layer):
-        if isinstance(stride, int) == True:
-            stride = (stride, stride, stride)
-        
-        result = []
-        for z in range(stride[2]):
-            for y in range(stride[1]):
-                for x in range(stride[0]):
-                    result.append(layer[..., x::stride[0], y::stride[1], z::stride[2]])
-
-        #for i in range(len(result)):
-            #print(result[i].shape)
-        return result
-
-    def forward(self, x):
-        #print("x", x.shape)
-        #print("-------------------------")
-        return torch.cat(self.create_subcubes(self.stride, x), 1)
-
-
-
 class ResnetGenerator3D(nn.Module):
     '''
     Construct a Resnet-based generator
@@ -54,66 +25,35 @@ class ResnetGenerator3D(nn.Module):
     '''
     def __init__(self, input_nc, output_nc, ngf=16, norm_layer=nn.BatchNorm3d, use_dropout=False, n_blocks=6, gpu_ids=[]):
         assert(n_blocks >= 0)
-        super(ResnetGenerator3D, self).__init__()
+        super(ResnetGenerator3DPre, self).__init__()
         self.input_nc = input_nc
         self.output_nc = output_nc
         self.ngf = ngf
         self.gpu_ids = gpu_ids
-
-        #stem = [nn.Conv3d(1, ngf, kernel_size=(7, 7, 6), padding=3),
-                 #norm_layer(ngf, affine=True),
-                 #nn.ReLU(True)]
-        
-        stem = [nn.Conv3d(1, ngf, kernel_size=(1, 1, 6), padding=(0, 0, 3), stride=1),
-                 stride_supression((2, 2, 1)),
-                 norm_layer(ngf * 2 * 2, affine=True),
+                 
+        stem = [nn.Conv3d(1, ngf, kernel_size=(1, 1, 6), padding=(0, 0, 3), stride=(2, 2, 1)),
+                 norm_layer(ngf, affine=True),
                  nn.ReLU(True),
-                 nn.Conv3d(ngf * 2 * 2, ngf * 2, kernel_size=1, padding=0),
-                 norm_layer(ngf * 2)]    # En el ALTER
-                
-        #print(stem)
+                 nn.Conv3d(ngf, ngf * 2, kernel_size=(1, 1, 1)),
+                 norm_layer(ngf * 2)]
 
         down = []
-        n_downsampling = 1    # En el ALTER
-        #n_downsampling = 2
+        n_downsampling = 1
         for i in range(n_downsampling):
-            #mult = 2**i
-            mult = 2**n_downsampling   # En el ALTER
-            #down +=  [ResnetBlock(ngf * mult * 2, 'zero', input_dim = ngf * mult, norm_layer=norm_layer, use_dropout=use_dropout, stride = 2, kernel=3)]
-            down +=  [ResnetBlock(ngf * mult * 2, 'zero', input_dim = ngf * 2, norm_layer=norm_layer, use_dropout=use_dropout, 
-                              stride = 2, kernel=3)]    # En el ALTER
-        
-        # AUMENTO *8
-        #down += [nn.Conv3d(ngf, ngf * 2, kernel_size=3, stride=1, padding=1),
-                    #stride_supression(2),
-                    #nn.Conv3d(ngf * 2 * 8, ngf * 2, kernel_size=1),
-                    #norm_layer(ngf * 2 * 8, affine=True),
-                    #nn.ReLU(True),
-                    
-                    
-                    #nn.Conv3d(ngf * 2 * 8, ngf * 2 * 2 * 8, kernel_size=3, stride=1, padding=1),
-                    #stride_supression(2),
-                    #nn.Conv3d(ngf * 2 * 2 * 8, ngf * 2 * 2, kernel_size=1),
-                    #norm_layer(ngf * 2 * 2 * 8 * 8, affine=True),
-                    #nn.ReLU(True)]
-        
-        # DISMINUCIÓN /8 (POSIBILIDAD)
-        
-        #print(down)
-        #exit()
+            mult = 2**n_downsampling
+            down += [nn.Conv3d(ngf * mult, ngf * mult * 2, kernel_size=3,
+                                stride=2, padding=1),
+                      norm_layer(ngf * mult * 2, affine=True),
+                      nn.ReLU(True)]
 
         middle = []
-        #mult = 2
         mult = 2**n_downsampling
         for i in range(n_blocks):
             middle += [ResnetBlock(ngf * mult * 2, 'zero', norm_layer=norm_layer, use_dropout=use_dropout)]
-            #middle += [ResnetBlock(ngf * mult * 8**n_downsampling, 'zero', norm_layer=norm_layer, use_dropout=use_dropout)]
-        #print(middle)
-        #exit()
 
         up = []
         
-        n_downsampling = 2  # En el ALTER
+        n_downsampling = 2
         for i in range(n_downsampling):
             mult = 2**(n_downsampling - i)
             up += [nn.ConvTranspose3d(ngf * mult, ngf * mult // 2,
@@ -121,15 +61,8 @@ class ResnetGenerator3D(nn.Module):
                                          padding=1, output_padding=(1, 1, 0)),
                       norm_layer(ngf * mult // 2, affine=True),
                       nn.ReLU(True)]
-            
-        #print(up)
-        #exit()
-
-        self.final = nn.Conv3d(ngf, output_nc, kernel_size=(7,7,26), padding=(3,3,0))#, stride=(1,1,7))
-        #self.final = nn.Conv3d(ngf, output_nc, kernel_size=(1,1,26), padding=0, stride=(2,2,1))
-        
-        #print(self.final)
-        #self.final = nn.Conv3d(ngf, output_nc, kernel_size=(7,7,13), padding=(3,3,0), stride=(1,1,7))
+                      
+        self.final = nn.Conv3d(ngf, output_nc, kernel_size=(7,7,26), padding=(3,3,0))
 
         self.stem   = nn.Sequential(*stem)
         self.down   = nn.Sequential(*down)
@@ -140,21 +73,12 @@ class ResnetGenerator3D(nn.Module):
         if self.gpu_ids and isinstance(input.data, torch.cuda.FloatTensor):
             return nn.parallel.data_parallel(self.model, input, self.gpu_ids)
         else:
-            #print("input", input.shape)
             x = self.stem(input)
-            #print("stem", x.shape)
             x = self.down(x)
-            #print("down", x.shape)
             x = self.middle(x)
-            #print("middle", x.shape)
             x = self.up(x)
-            #print("up", x.shape)
             x = self.final(x)
-            #print("final", x.shape)
-            #exit()
             return x
-
-
 
 class ResnetBlock(nn.Module):
     '''
@@ -169,11 +93,11 @@ class ResnetBlock(nn.Module):
         use_bias (bool)     -- if the conv layer uses bias or not
     '''
     
-    def __init__(self, dim, padding_type, norm_layer, use_dropout, input_dim = None, use_bias = False, stride = 1, kernel = 3):
+    def __init__(self, dim, padding_type, norm_layer, use_dropout, use_bias = False):
         super(ResnetBlock, self).__init__()
-        self.conv_block = self.build_conv_block(dim, padding_type, norm_layer, use_dropout, input_dim, use_bias, stride, kernel)
+        self.conv_block = self.build_conv_block(dim, padding_type, norm_layer, use_dropout, use_bias)
 
-    def build_conv_block(self, dim, padding_type, norm_layer, use_dropout, input_dim, use_bias, stride, kernel):
+    def build_conv_block(self, dim, padding_type, norm_layer, use_dropout, use_bias):
         conv_block = []
         p = 0
         if padding_type == 'reflect':
@@ -185,27 +109,12 @@ class ResnetBlock(nn.Module):
         else:
             raise NotImplementedError('padding [%s] is not implemented' % padding_type)
 
-        input_dim = dim if input_dim == None else input_dim
-        if stride == 1:
-            conv_block += [nn.Conv3d(input_dim, dim, kernel_size=kernel, padding=p, bias=use_bias, stride = stride),
-                        norm_layer(dim),
-                        nn.ReLU(True)]
-            dimF = dim
-        else:
-            dimF = dim * (stride**3)   
-            conv_block += [nn.Conv3d(input_dim, dim, kernel_size=kernel, padding=p, bias=use_bias, stride = 1),
-                           stride_supression(stride),
-                        norm_layer(dimF),
-                        nn.ReLU(True)]
-            
-            
+        conv_block += [nn.Conv3d(dim, dim, kernel_size=3, padding=p, bias=use_bias),
+                       norm_layer(dim),
+                       nn.ReLU(True)]
         if use_dropout:
             conv_block += [nn.Dropout(0.5)]
-            
-        #if stride != 1:
-            #conv_block += stride_supression(stride)
-            #dimF = dim * (stride**3)
-        
+
         p = 0
         if padding_type == 'reflect':
             conv_block += [nn.ReflectionPad3d(1)]
@@ -215,26 +124,11 @@ class ResnetBlock(nn.Module):
             p = 1
         else:
             raise NotImplementedError('padding [%s] is not implemented' % padding_type)
-        
-        
-        conv_block += [nn.Conv3d(dimF, dim, kernel_size=3, padding=p, bias=use_bias),
+        conv_block += [nn.Conv3d(dim, dim, kernel_size=3, padding=p, bias=use_bias),
                        norm_layer(dim)]
-
-        if stride != 1:
-            self.shortcut = nn.Sequential(
-                nn.Conv3d(input_dim, dim, kernel_size=1, stride=stride, bias=use_bias),
-                norm_layer(dim)
-            )
-        else:
-            self.shortcut = nn.Sequential(*[])
 
         return nn.Sequential(*conv_block)
 
     def forward(self, x):
-        #print(x.shape)
-        #print(self.shortcut(x).shape)
-        #print(self.conv_block(x).shape)
-        #exit()
-        out = nn.ReLU(inplace=True)(self.shortcut(x) + self.conv_block(x))
-
+        out = x + self.conv_block(x)
         return out
