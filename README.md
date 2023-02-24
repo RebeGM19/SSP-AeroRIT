@@ -23,17 +23,17 @@ To obtain train, validation and test splits with 64 x 64 image chips, execute th
 
 ```
   python sampling_data.py
-  
-```
+ ```
 
 To execute the training and validation of a network, run the [train](/train.py/) file as it follows:
 
 ```
   python3 train.py --network_arch SSP --batch-size 64 --ngf 8
-
 ```
 Main arguments used in [train](/train.py/):
 
+| Argument | Details |
+| -- | -- |
 | network_arch | Network architecture to use: resnet, SSP, NoSSP |
 | batch-size | Number of images sampled per minibatch |
 | ngf | Number of filters: 4, 8, 16, 32, 64 |
